@@ -15,7 +15,7 @@ type Layout struct {
 	Pages           *tview.Pages
 	MainFlex        *tview.Flex
 	DeploymentsList *tview.List
-	BranchesView    *tview.TextView
+	BranchesList    *tview.List
 	CommitsView     *tview.TextView
 	StatusView      *tview.TextView
 	currentPanel    int
@@ -52,13 +52,11 @@ func (l *Layout) setupPanels() {
 	})
 
 	// Branches panel (top-right)
-	l.BranchesView = tview.NewTextView().
-		SetDynamicColors(true).
-		SetScrollable(true)
-	l.BranchesView.SetBorder(true).
+	l.BranchesList = tview.NewList().
+		ShowSecondaryText(false)
+	l.BranchesList.SetBorder(true).
 		SetTitle(" Branches (2) ")
 
-	// Commits panel (bottom-left)
 	l.CommitsView = tview.NewTextView().
 		SetDynamicColors(true).
 		SetScrollable(true)
@@ -75,16 +73,17 @@ func (l *Layout) setupPanels() {
 	// Store panels for navigation
 	l.panels = []tview.Primitive{
 		l.DeploymentsList,
-		l.BranchesView,
+		l.BranchesList,
 		l.CommitsView,
 		l.StatusView,
 	}
 	l.currentPanel = 0
 }
 func (l *Layout) setupLayout() {
+	// Top row: Deployments | Branches
 	topRow := tview.NewFlex().
 		AddItem(l.DeploymentsList, 0, 1, true).
-		AddItem(l.BranchesView, 0, 1, false)
+		AddItem(l.BranchesList, 0, 1, false) // CHANGED
 
 	// Bottom row: Commits | Status
 	bottomRow := tview.NewFlex().
@@ -161,7 +160,7 @@ func (l *Layout) switchToPanel(index int) {
 func (l *Layout) highlightCurrentPanel() {
 	// Reset all panel title colors
 	l.DeploymentsList.SetTitleColor(tcell.ColorWhite)
-	l.BranchesView.SetTitleColor(tcell.ColorWhite)
+	l.BranchesList.SetTitleColor(tcell.ColorWhite) // CHANGED
 	l.CommitsView.SetTitleColor(tcell.ColorWhite)
 	l.StatusView.SetTitleColor(tcell.ColorWhite)
 
@@ -170,7 +169,7 @@ func (l *Layout) highlightCurrentPanel() {
 	case 0:
 		l.DeploymentsList.SetTitleColor(tcell.ColorYellow)
 	case 1:
-		l.BranchesView.SetTitleColor(tcell.ColorYellow)
+		l.BranchesList.SetTitleColor(tcell.ColorYellow) // CHANGED
 	case 2:
 		l.CommitsView.SetTitleColor(tcell.ColorYellow)
 	case 3:
@@ -211,6 +210,40 @@ func (l *Layout) refreshDeployments() {
 	l.LoadDeployments()
 	l.StatusView.SetText("[green]✓ Refreshed")
 }
+
+// LoadBranches fetches and displays branches for selected deployment
+func (l *Layout) LoadBranches(deploymentID string) {
+	l.BranchesList.Clear()
+	l.BranchesList.AddItem("Loading branches...", "", 0, nil)
+
+	go func() {
+		output, err := l.Client.ListBranches(deploymentID)
+		l.App.QueueUpdateDraw(func() {
+			l.BranchesList.Clear()
+			if err != nil {
+				l.BranchesList.AddItem(fmt.Sprintf("Error: %v", err), "", 0, nil)
+				return
+			}
+
+			branches := guepard.ParseBranches(output)
+			l.State.Branches = branches
+
+			if len(branches) == 0 {
+				l.BranchesList.AddItem("No branches found", "", 0, nil)
+				return
+			}
+
+			for _, branch := range branches {
+				displayName := branch.Name
+				if branch.IsCurrent {
+					displayName = "* " + displayName
+				}
+				l.BranchesList.AddItem(displayName, "", 0, nil)
+			}
+		})
+	}()
+}
+
 func (l *Layout) onDeploymentSelected(index int) {
 	if index >= len(l.State.Deployments) {
 		return
@@ -221,7 +254,10 @@ func (l *Layout) onDeploymentSelected(index int) {
 
 	l.StatusView.SetText(fmt.Sprintf("[green]Selected:[white] %s\n\n[dim]Loading branches and commits...", deployment.Name))
 
-	// TODO: Load branches and commits for this deployment
-	l.BranchesView.SetText("[yellow]Branches will appear here")
+	// Load branches for this deployment
+	// We need the deployment ID - for now we'll use the name as a placeholder
+	// You'll need to update the parser to extract the actual ID
+	l.LoadBranches(deployment.Name)
+
 	l.CommitsView.SetText("[yellow]Commits will appear here")
 }
